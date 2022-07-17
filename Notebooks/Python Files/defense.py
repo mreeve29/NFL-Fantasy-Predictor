@@ -69,3 +69,4 @@ def get_all_teams_defense():
             teams_data[team[0]][year] = get_defense_year(df_year, year)
             
     return teams_data
+    
