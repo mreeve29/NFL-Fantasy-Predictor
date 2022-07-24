@@ -28,10 +28,32 @@ def get_all_fantasy_players():
     return usernames
 
 
+def get_headers(html):
+    soup = BeautifulSoup(html,features='html.parser')
+    thead = soup.find_all("thead")[0]
+    ths = thead.tr.findChildren()
+    
+    headers = []
+    col_index = 0
+    for th in ths:
+        start_index = col_index
+        
+        if(th.get("colspan") is not None):
+            col_index = col_index + int(th.get("colspan"))
+        else:
+            col_index = col_index + 1
+
+        if(th.text != ''):
+            headers.append((th.text, start_index, col_index - 1))
+    return headers
+
 def get_player_df(username, startYear):
     url = "https://www.pro-football-reference.com/players/K/" + username + "/gamelog/"
-    df = pd.read_html(url, header=1)[0]
+    res = requests.get(url)
+
+    df = pd.read_html(res.text, header=1)[0]
     df = df.head(df.shape[0] - 1)
+
     df = df[df['Date'] != "Date"]
     df = df[df['GS'] != "Did Not Play"]
     df = df[df['GS'] != "Inactive"]
@@ -39,7 +61,8 @@ def get_player_df(username, startYear):
     df = df[df['GS'] != "COVID-19 List"]
     df.drop(columns=["GS"])
     df = df[df['Year'].astype(int) >= startYear]
-    return df
+
+    return (df, get_headers(res.text))
 
 
 # Adjusted Yards per pass attempt: (PassingYds + 20PassTD - 45Int)/(Passes attempted)
