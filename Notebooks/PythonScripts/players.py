@@ -44,98 +44,126 @@ def get_headers(html):
             col_index = col_index + 1
 
         if(th.text != ''):
-            headers.append((th.text, start_index, col_index - 1))
+            headers.append((th.text, start_index, col_index))
     return headers
 
-def get_player_df(username, startYear):
+def get_player_df(username, pos, startYear):
     url = "https://www.pro-football-reference.com/players/K/" + username + "/gamelog/"
     res = requests.get(url)
 
     df = pd.read_html(res.text, header=1)[0]
     df = df.head(df.shape[0] - 1)
 
+    df = df[df['Age'].notnull()]
+
+    # These lines may not be necessary because of the previous line
     df = df[df['Date'] != "Date"]
     df = df[df['GS'] != "Did Not Play"]
     df = df[df['GS'] != "Inactive"]
     df = df[df['GS'] != "Injured Reserve"]
     df = df[df['GS'] != "COVID-19 List"]
+    df = df[df['GS'] != "Suspended"]
+
     df.drop(columns=["GS"])
     df = df[df['Year'].astype(int) >= startYear]
 
-    return (df, get_headers(res.text))
+    df = df.reset_index(drop=True).fillna(0)
+
+    headers = get_headers(res.text)
+
+    if pos.lower() == 'qb':
+        return get_qb_df(df, headers)
+    else :
+        return get_flex_df(df, headers)
 
 
-# Adjusted Yards per pass attempt: (PassingYds + 20PassTD - 45Int)/(Passes attempted)
-def get_rec_df(df):
-    df_rec = pd.DataFrame(columns=['Year','Date','Week','Team','Opp','Location',
+def get_flex_df(df, headers):
+    df_flex = pd.DataFrame(columns=['Year','Date','Week','Team','Opp','Location',
                                    'Tgt','Rec','RecYd','RecYd/Rec','RecYd/Tgt','Catch%','RecTD',
                                    'RushAtt','RushYd','RushYd/Att','RushTD',
                                    'OffSnapCount','OffSnap%'
                                 ])
 
-    for index,row in df.iterrows():
-        loc = ""
-        if row['Unnamed: 7'] == "@":
-            loc = "A"
-        else:
-            loc = "H"
-        catch = re.search("^(.*)%$", row['Ctch%']).group(1)
-        snap = re.search("^(.*)%$", row['Pct']).group(1)
-        df_rec.loc[index] = [int(row['Year']),row['Date'],int(row['Week']),str(row['Tm']),str(row['Opp']),loc,
-                                int(row['Tgt']),int(row['Rec']),int(row['Yds']),float(row['Y/R']),float(row['Y/Tgt']),float(catch),int(row['TD']),
-                                int(row['Att']),int(row['Yds.1']),float(row['Y/A']),int(row['TD.1']),
-                                int(row['Num']),int(snap)
-                               ]
-                             
-    df_rec = df_rec.fillna(0)
-    return df_rec
+    # Add common columns
+    df_flex["Year"] = df["Year"]
+    df_flex["Date"] = df["Date"]
+    df_flex["Week"] = df["Week"]
+    df_flex["Team"] = df["Tm"]
+    df_flex["Opp"] = df["Opp"]
+    df_flex["Location"] = df["Unnamed: 7"].apply(lambda x: "A" if x == "@" else "H")
 
-def get_qb_df(df):
+
+
+    for header, start, end in headers:
+        if header.lower() == "receiving":
+            receiving_df = df.iloc[:, start:end].rename(columns=lambda x: re.sub('\.[0-9]', '', x))
+
+            df_flex["Tgt"] = receiving_df["Tgt"].astype(int)
+            df_flex["Rec"] = receiving_df["Rec"].astype(int)
+            df_flex["RecYd"] = receiving_df["Yds"].astype(int)
+            df_flex["RecYd/Rec"] = receiving_df["Y/R"].astype(float)
+            df_flex["RecYd/Tgt"] = receiving_df["Y/Tgt"].astype(float)
+            df_flex["Catch%"] = receiving_df["Ctch%"].apply(lambda x: float(x) if isinstance(x, int) else float(x.replace("%", "")))
+            df_flex["RecTD"] = receiving_df["TD"].astype(int)
+
+        elif header.lower() == "rushing":
+            rush_df = df.iloc[:, start:end].rename(columns=lambda x: re.sub('\.[0-9]', '', x))
+
+            df_flex["RushAtt"] = rush_df["Att"].astype(int)
+            df_flex["RushYd"] = rush_df["Yds"].astype(int)
+            df_flex["RushYd/Att"] = rush_df["Y/A"].astype(float)
+            df_flex["RushTD"] = rush_df["TD"].astype(int)
+
+        elif header.lower() == "off. snaps":
+            snap_df = df.iloc[:, start:end].rename(columns=lambda x: re.sub('\.[0-9]', '', x))
+
+            df_flex["OffSnapCount"] = snap_df["Num"].astype(int)
+            df_flex["OffSnap%"] = snap_df["Pct"].apply(lambda x: float(x) if isinstance(x, int) else float(x.replace("%", "")))
+            
+    return df_flex.fillna(0)
+
+# Adjusted Yards per pass attempt: (PassingYds + 20PassTD - 45Int)/(Passes attempted)
+def get_qb_df(df, headers):
     df_qb = pd.DataFrame(columns=['Year','Date','Week','Team','Opp','Location',
-                                  'Cmp','PassAtt','Cmp%','PassYd','PassTD','Int','QBRating','Sacks','PassYd/Att','AdjPassYd/Att',
-                                  'RushAtt','RushYd','RushYd/Att','RushTD',
-                                  'OffSnapCount','OffSnap%'
-                                ])
-    for index,row in df.iterrows():
-        lst_date = row['Date'].split("-")
-        date = datetime.datetime(int(lst_date[0]), int(lst_date[1]), int(lst_date[2]))
-        loc = ""
-        if row['Unnamed: 7'] == "@":
-            loc = "A"
-        else:
-            loc = "H"
-        snap = re.search("^(.*)%$", row['Pct']).group(1)
-        df_qb.loc[index] = [int(row['Year']),date,int(row['Week']),str(row['Tm']),str(row['Opp']),loc,
-                                int(row['Cmp']),int(row['Att']),float(row['Cmp%']),int(row['Yds']),int(row['TD']),int(row['Int']),float(row['Rate']),int(row['Sk']),float(row['Y/A']),float(row['AY/A']),
-                                int(row['Att.1']),int(row['Yds.1']),float(row['Y/A.1']),int(row['TD.1']),
-                                int(row['Num']),int(snap)
+                                    'Cmp','PassAtt','Cmp%','PassYds','PassTD','Int','QBRating','Sacks','PassYd/Att','AdjPassYd/Att',
+                                    'RushAtt','RushYd','RushYd/Att','RushTD',
+                                    'OffSnapCount','OffSnap%'
+                                    ])
 
-                           ]
-    df_qb = df_qb.fillna(0)
-    return df_qb
+    df_qb["Year"] = df["Year"]
+    df_qb["Date"] = df["Date"]
+    df_qb["Week"] = df["Week"]
+    df_qb["Team"] = df["Tm"]
+    df_qb["Opp"] = df["Opp"]
+    df_qb["Location"] = df["Unnamed: 7"].apply(lambda x: "A" if x == "@" else "H")
 
-def get_rb_df(df):
-    df_rb = pd.DataFrame(columns=['Year','Date','Week','Team','Opp','Location',
-                                  'RushAtt','RushYd','RushYd/Att','RushTD',
-                                  'Tgt','Rec','RecYd','RecYd/Rec','RecYd/Tgt','Catch%','RecTD',
-                                  'OffSnapCount','OffSnap%'
-                                ])
-    for index,row in df.iterrows():
-        lst_date = row['Date'].split("-")
-        date = datetime.datetime(int(lst_date[0]), int(lst_date[1]), int(lst_date[2]))
-        loc = ""
-        if row['Unnamed: 7'] == "@":
-            loc = "A"
-        else:
-            loc = "H"
-        catch = re.search("^(.*)%$", row['Ctch%']).group(1)
-        snap = re.search("^(.*)%$", row['Pct']).group(1)
-        df_rb.loc[index] = [int(row['Year']),date,int(row['Week']),str(row['Tm']),str(row['Opp']),loc,
-                                int(row['Att']),int(row['Yds']),float(row['Y/A']),int(row['TD']),
-                                int(row['Tgt']),int(row['Rec']),int(row['Yds.1']),float(row['Y/R']),float(row['Y/Tgt']),float(catch),int(row['TD.1']),
-                                int(row['Num']),int(snap)
-                               ]
-    df_rb = df_rb.fillna(0)
-    return df_rb
+    for header, start, end in headers:
+        if header.lower() == "passing":
+            pass_df = df.iloc[:, start:end].rename(columns=lambda x: re.sub('\.[0-9]', '', x))
 
-#print(get_qb_df(get_player_df("WilsRu00", 2019)))
+            df_qb["Cmp"] = pass_df["Cmp"].astype(int)
+            df_qb["PassAtt"] = pass_df["Att"].astype(int)
+            df_qb["Cmp%"] = pass_df["Cmp%"].astype(float)
+            df_qb["PassYds"] = pass_df["Yds"].iloc[:, 0].astype(int) # after regex, passing yards and yards lost by sack are both 'Yds', so we take the first one which is passing yards
+            df_qb["PassTD"] = pass_df["TD"].astype(int)
+            df_qb["Int"] = pass_df["Int"].astype(int)
+            df_qb["QBRating"] = pass_df["Rate"].astype(float)
+            df_qb["Sacks"] = pass_df["Sk"].astype(int)
+            df_qb["PassYd/Att"] = pass_df["Y/A"].astype(float)
+            df_qb["AdjPassYd/Att"] = pass_df["AY/A"].astype(float)
+
+        elif header.lower() == "rushing":
+            rush_df = df.iloc[:, start:end].rename(columns=lambda x: re.sub('\.[0-9]', '', x))
+
+            df_qb["RushAtt"] = rush_df["Att"].astype(int)
+            df_qb["RushYd"] = rush_df["Yds"].astype(int)
+            df_qb["RushYd/Att"] = rush_df["Y/A"].astype(float)
+            df_qb["RushTD"] = rush_df["TD"].astype(int)
+
+        elif header.lower() == "off. snaps":
+            snap_df = df.iloc[:, start:end].rename(columns=lambda x: re.sub('\.[0-9]', '', x))
+            
+            df_qb["OffSnapCount"] = snap_df["Num"].astype(int)
+            df_qb["OffSnap%"] = snap_df["Pct"].apply(lambda x: float(x) if isinstance(x, int) else float(x.replace("%", "")))
+            
+    return df_qb.fillna(0)
