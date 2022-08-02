@@ -2,7 +2,7 @@ import requests
 import pandas as pd
 
 def get_player_df(name):
-    url = "http://129.213.58.231:8000/player/df?&name=" + name
+    url = "https://nfl-fantasy-predictor-db.herokuapp.com/player/df?&name=" + name
     response = requests.get(url)
     data = response.json()
     if "error" in data:
@@ -12,7 +12,7 @@ def get_player_df(name):
         return pd.read_json(data["response"])
 
 def get_all_players_df():
-    url = "http://129.213.58.231:8000/all_players_df"
+    url = "https://nfl-fantasy-predictor-db.herokuapp.com/all_players_df"
     response = requests.get(url)
     data = response.json()
     if len(data) == 0:
