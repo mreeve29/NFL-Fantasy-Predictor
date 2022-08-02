@@ -31,7 +31,7 @@ def get_player_stats(name: str):
     
     table = "qb_stats" if pos == 'qb' else "flex_stats"
 
-    df_json = pd.read_sql_query("select * from " + table + " where player_id in (SELECT player_id from players where player_name = 'Cooper Kupp');", engine).drop(columns=['player_id']).to_json(orient='records')
+    df_json = pd.read_sql_query("select * from " + table + " where player_id in (SELECT player_id from players where player_name = '" + name + "');", engine).drop(columns=['player_id']).to_json(orient='records')
 
     return {"response": df_json}
 
