@@ -56,7 +56,10 @@ def player_df(name: str):
     if df is None:
         return { "error": "Player not found" }
     
-    return { "response" : df.to_json(orient='records') }
+    return {
+        "player_name": name,
+        "response" : df.to_json(orient='records') 
+        }
 
 @app.get("/player/df_html")
 def player_df(name: str):
@@ -64,7 +67,10 @@ def player_df(name: str):
     if df is None:
         return { "error": "Player not found" }
     
-    return { "response" : df.to_html() }
+    return { 
+        "player_name": name,
+        "response" : df.to_html() 
+        }
 
 @app.get("/all_players_df_json")
 def all_players():
