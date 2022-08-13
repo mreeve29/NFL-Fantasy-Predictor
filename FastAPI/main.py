@@ -1,7 +1,7 @@
 from fastapi import FastAPI, Depends
-from sqlalchemy import create_engine, Table, MetaData, select, Session
+from sqlalchemy import create_engine, Table, MetaData, select
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, Session
 import pandas as pd
 from dotenv import load_dotenv
 import os
