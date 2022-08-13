@@ -1,5 +1,7 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from sqlalchemy import create_engine, Table, MetaData, select
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 import pandas as pd
 from dotenv import load_dotenv
 import os
@@ -10,18 +12,30 @@ DB_URL = os.getenv("DATABASE_URL")
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
+engine = create_engine(DB_URL)
+
+base = declarative_base()
+base.metadata.create_all(bind=engine)
+
 
 app = FastAPI()
 
-def get_player_df(name: str):
-    engine  = create_engine(DB_URL)
+def get_db():
+    try:
+        db = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+        yield db
+    finally:
+        db.close()
+
+
+def get_player_df(name: str, db: Session = Depends(get_db)):
     metadata = MetaData(engine)
 
     players = Table('players', metadata, autoload=True, autoload_with=engine)
 
     pquery = select([players.columns.player_id, players.columns.pos]).where(players.columns.player_name == name)
 
-    result = engine.execute(pquery)
+    result = db.execute(pquery)
 
     res_set = result.fetchall()
 
@@ -37,17 +51,20 @@ def get_player_df(name: str):
 
     stat_query = select([stat_table]).where(stat_table.columns.player_id == player_id)
 
-    return pd.read_sql_query(stat_query, engine).drop(columns=['player_id'])
+
+
+    return pd.read_sql_query(stat_query, db).drop(columns=['player_id'])
     
-def get_all_players_df():
-    engine  = create_engine(DB_URL)
+def get_all_players_df(db: Session = Depends(get_db)):
     metadata = MetaData(engine)
 
     players = Table('players', metadata, autoload=True, autoload_with=engine)
 
     players_query = select([players])
 
-    return pd.read_sql_query(players_query, engine).drop(columns=['player_id'])
+
+
+    return pd.read_sql_query(players_query, db).drop(columns=['player_id'])
 
 
 @app.get("/player/df_json")
