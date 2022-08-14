@@ -1,7 +1,5 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy import create_engine, Table, MetaData, select
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
 import pandas as pd
 from dotenv import load_dotenv
 import os
@@ -12,30 +10,19 @@ DB_URL = os.getenv("DATABASE_URL")
 if DB_URL.startswith("postgres://"):
     DB_URL = DB_URL.replace("postgres://", "postgresql://", 1)
 
-engine = create_engine(DB_URL)
-
-base = declarative_base()
-base.metadata.create_all(bind=engine)
-
 
 app = FastAPI()
 
-def get_db():
-    try:
-        db = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-        yield db
-    finally:
-        db.close()
 
-
-def get_player_df(name: str, db: Session = Depends(get_db)):
+def get_player_df(name: str):
+    engine = create_engine(DB_URL)
     metadata = MetaData(engine)
 
     players = Table('players', metadata, autoload=True, autoload_with=engine)
 
     pquery = select([players.columns.player_id, players.columns.pos]).where(players.columns.player_name == name)
 
-    result = db.execute(pquery)
+    result = engine.execute(pquery)
 
     res_set = result.fetchall()
 
@@ -44,6 +31,7 @@ def get_player_df(name: str, db: Session = Depends(get_db)):
 
     player_id = res_set[0][0]
     pos = res_set[0][1]
+
     
     table = "qb_stats" if pos == 'qb' else "flex_stats"
 
@@ -53,9 +41,13 @@ def get_player_df(name: str, db: Session = Depends(get_db)):
 
 
 
-    return pd.read_sql_query(stat_query, db).drop(columns=['player_id'])
+    pd_df = pd.read_sql_query(stat_query, engine).drop(columns=['player_id'])
+
+    engine.dispose()
+    return pd_df
     
-def get_all_players_df(db: Session = Depends(get_db)):
+def get_all_players_df():
+    engine = create_engine(DB_URL)
     metadata = MetaData(engine)
 
     players = Table('players', metadata, autoload=True, autoload_with=engine)
@@ -64,7 +56,10 @@ def get_all_players_df(db: Session = Depends(get_db)):
 
 
 
-    return pd.read_sql_query(players_query, db).drop(columns=['player_id'])
+    pd_df =  pd.read_sql_query(players_query, engine).drop(columns=['player_id'])
+
+    engine.dispose()
+    return pd_df
 
 
 @app.get("/player/df_json")
