@@ -46,7 +46,7 @@ def player_df(name: str):
             "pos": info[1], 
             "team": info[2], 
             "player_id": info[0], 
-            "df": df.html()
+            "df": df.to_html()
             }
     else:
         return {"error": "Player not found"}
